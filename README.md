@@ -28,8 +28,36 @@ module DemoRailsCache
     # config.time_zone = "Central Time (US & Canada)"
     # config.eager_load_paths << Rails.root.join("extras")
     config.action_controller.default_protect_from_forgery = false if ENV['RAILS_ENV'] == 'development'
-    config.cache_store = :redis_cache_store, { url: ENV.fetch('REDIS_URL', 'redis://localhost:6379/1') }
   end
+end
+```
+
+Update the `config/environments/development.rb` cache config to use the Redis cache instead of the memory store:
+
+```rb
+require 'active_support/core_ext/integer/time'
+
+Rails.application.configure do
+
+  # ... omitted
+
+  if Rails.root.join('tmp/caching-dev.txt').exist?
+    config.action_controller.perform_caching = true
+    config.action_controller.enable_fragment_cache_logging = true
+
+    # CHANGE HERE
+    # config.cache_store = :memory_store
+    config.cache_store = :redis_cache_store, { url: ENV.fetch('REDIS_URL', 'redis://localhost:6379/1') }
+    config.public_file_server.headers = {
+      'Cache-Control' => "public, max-age=#{2.days.to_i}"
+    }
+  else
+    config.action_controller.perform_caching = false
+
+    config.cache_store = :null_store
+  end
+
+  # ... omitted
 end
 ```
 
@@ -84,15 +112,15 @@ Cache-Control: max-age=0, private, must-revalidate
 Content-Type: application/json; charset=utf-8
 ETag: W/"d75d122ce074e5382e16eaf331afa72a"
 Referrer-Policy: strict-origin-when-cross-origin
-Server-Timing: start_processing.action_controller;dur=0.09619140625, cache_read.active_support;dur=0.010986328125, !compile_template.action_view;dur=54.86083984375, !render_template.action_view;dur=184.389892578125, render_partial.action_view;dur=11.81005859375, render_collection.action_view;dur=15.66064453125, render_template.action_view;dur=149.24560546875, render_layout.action_view;dur=96.518798828125, request.action_dispatch;dur=243.8232421875, cache_generate.active_support;dur=3004.27197265625, cache_write.active_support;dur=0.087890625, process_action.action_controller;dur=3017.899169921875
+Server-Timing: start_processing.action_controller;dur=0.125732421875, cache_read.active_support;dur=0.423095703125, cache_generate.active_support;dur=3003.9150390625, cache_write.active_support;dur=0.537841796875, process_action.action_controller;dur=3006.31298828125
 Transfer-Encoding: chunked
 Vary: Accept
 X-Content-Type-Options: nosniff
 X-Download-Options: noopen
 X-Frame-Options: SAMEORIGIN
 X-Permitted-Cross-Domain-Policies: none
-X-Request-Id: 5f2c4516-a870-418c-8eb9-4d4c4f17e4ea
-X-Runtime: 3.032582
+X-Request-Id: 19bbeec4-189e-4593-8003-f6c567ce19d8
+X-Runtime: 3.012563
 X-XSS-Protection: 0
 
 {
@@ -106,9 +134,9 @@ X-XSS-Protection: 0
 Our server console tells us the following:
 
 ```s
-Started GET "/hello" for ::1 at 2022-03-02 15:28:09 +1000
+Started GET "/hello" for ::1 at 2022-03-03 11:43:49 +1000
 Processing by HelloController#index as */*
-Completed 200 OK in 3018ms (Views: 0.2ms | Allocations: 76268)
+Completed 200 OK in 3006ms (Views: 0.3ms | ActiveRecord: 0.0ms | Allocations: 279)
 ```
 
 If we run it a second time:
@@ -120,15 +148,15 @@ Cache-Control: max-age=0, private, must-revalidate
 Content-Type: application/json; charset=utf-8
 ETag: W/"d75d122ce074e5382e16eaf331afa72a"
 Referrer-Policy: strict-origin-when-cross-origin
-Server-Timing: start_processing.action_controller;dur=0.218994140625, cache_read.active_support;dur=0.065185546875, cache_fetch_hit.active_support;dur=0.002685546875, process_action.action_controller;dur=1.281005859375
+Server-Timing: start_processing.action_controller;dur=0.126953125, cache_read.active_support;dur=0.804931640625, cache_fetch_hit.active_support;dur=0.00634765625, process_action.action_controller;dur=2.620849609375
 Transfer-Encoding: chunked
 Vary: Accept
 X-Content-Type-Options: nosniff
 X-Download-Options: noopen
 X-Frame-Options: SAMEORIGIN
 X-Permitted-Cross-Domain-Policies: none
-X-Request-Id: b97f2b96-5947-4156-b171-e3c8bc9b195d
-X-Runtime: 0.010434
+X-Request-Id: 279b4ba3-e72c-4893-ae5f-30a5d884f6a0
+X-Runtime: 0.010306
 X-XSS-Protection: 0
 
 {
@@ -142,7 +170,17 @@ X-XSS-Protection: 0
 The Rails server logs tell us the following:
 
 ```s
-Started GET "/hello" for ::1 at 2022-03-02 15:29:14 +1000
+Started GET "/hello" for ::1 at 2022-03-03 11:42:35 +1000
 Processing by HelloController#index as */*
-Completed 200 OK in 1ms (Views: 0.2ms | Allocations: 167)
+Completed 200 OK in 2ms (Views: 0.3ms | ActiveRecord: 0.0ms | Allocations: 207)
+```
+
+If we were running `redis-cli monitor` that entire time:
+
+```s
+$ redis-cli monitor
+OK
+1646271829.959654 [1 [::1]:56084] "get" "cached_result"
+1646271832.964237 [1 [::1]:56084] "set" "cached_result" "\x04\bo: ActiveSupport::Cache::Entry\t:\x0b@value[\aI\"\nHello\x06:\x06ETI\"\nWorld\x06;\aT:\r@version0:\x10@created_atf\x060:\x10@expires_in0"
+1646271928.797673 [1 [::1]:56084] "get" "cached_result"
 ```
