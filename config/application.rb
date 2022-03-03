@@ -19,6 +19,5 @@ module DemoRailsCache
     # config.time_zone = "Central Time (US & Canada)"
     # config.eager_load_paths << Rails.root.join("extras")
     config.action_controller.default_protect_from_forgery = false if ENV['RAILS_ENV'] == 'development'
-    config.cache_store = :redis_cache_store, { url: ENV.fetch('REDIS_URL', 'redis://localhost:6379/1') }
   end
 end
